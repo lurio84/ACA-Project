@@ -3,9 +3,9 @@
 #include <stdlib.h>
 #include <unistd.h>  // Para gethostname
 
-#define M 1000   // Filas de A y C
-#define K_DIM 1000  // Columnas de A, Filas de B
-#define P 1000  // Columnas de B y C
+#define M 6   // Filas de A y C
+#define K_DIM 4  // Columnas de A, Filas de B
+#define P 5  // Columnas de B y C
 
 // Función para inicializar matrices
 void initialize_matrices(double A[M][K_DIM], double B[K_DIM][P], double C[M][P]) {
