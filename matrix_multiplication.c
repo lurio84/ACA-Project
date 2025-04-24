@@ -114,7 +114,7 @@ int main(int argc, char *argv[]) {
     int sizes[][3] = {
         {100, 100, 100},
         {1000, 1000, 1000},
-        {2500, 2500, 2500}
+        {2000, 2000, 2000}
     };
 
     int num_tests = sizeof(sizes) / sizeof(sizes[0]);
