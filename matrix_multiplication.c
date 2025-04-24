@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 void fill_matrices(double *A, double *B, int M, int K_DIM, int P) {
     srand(42);  // Semilla fija para consistencia entre ejecuciones
@@ -82,17 +83,6 @@ void run_multiplication(int M, int K_DIM, int P, int rank, int size) {
 
     if (rank == 0) {
         printf("Tiempo de ejecuci\u00f3n: %.6f segundos\n", end - start);
-
-        if (M <= 10 && P <= 10) {
-            printf("\nResultado de A * B:\n");
-            for (int i = 0; i < M; i++) {
-                for (int j = 0; j < P; j++)
-                    printf("%5.1f ", C[i * P + j]);
-                printf("\n");
-            }
-        }
-        free(A);
-        free(C);
     }
 
     free(B);
@@ -102,25 +92,23 @@ void run_multiplication(int M, int K_DIM, int P, int rank, int size) {
     free(displs);
     free(recvcounts);
     free(recvdispls);
+    if (rank == 0) {
+        free(A);
+        free(C);
+    }
 }
 
 int main(int argc, char *argv[]) {
     int rank, size;
-
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    int sizes[][3] = {
-        {100, 100, 100},
-        {1000, 1000, 1000},
-        {2000, 2000, 2000}
-    };
+    int base = 1000; // Carga base por proceso
+    int scale = (int) ceil(sqrt((double)size)); // Escalar proporcional al número de procesos
+    int N = base * scale; // Tamaño de matriz escalado
 
-    int num_tests = sizeof(sizes) / sizeof(sizes[0]);
-    for (int i = 0; i < num_tests; i++) {
-        run_multiplication(sizes[i][0], sizes[i][1], sizes[i][2], rank, size);
-    }
+    run_multiplication(N, N, N, rank, size);
 
     MPI_Finalize();
     return 0;
