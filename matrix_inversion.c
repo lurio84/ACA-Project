@@ -1,48 +1,54 @@
 #include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
 #include <math.h>
 
-#define N 4  // Tamaño de la matriz cuadrada
+#define N 4 // tamaño de la matriz cuadrada (puedes cambiar esto)
 
-void print_matrix(const char* label, double* M, int n) {
-    printf("\n%s\n", label);
+void generate_matrix(double *A, int n) {
+    srand(42);
+    for (int i = 0; i < n * n; i++) {
+        A[i] = (rand() % 10) + 1;
+    }
+}
+
+void print_matrix(const char *label, double *M, int n) {
+    printf("%s\n", label);
     for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++)
-            printf("%8.4f ", M[i * n + j]);
+        for (int j = 0; j < n; j++) {
+            printf("%8.3f ", M[i * n + j]);
+        }
         printf("\n");
     }
     printf("\n");
 }
 
-void generate_matrix(double* A, int n) {
-    srand(42);  // Semilla fija
-    for (int i = 0; i < n * n; i++) {
-        A[i] = (rand() % 5) + 1;
+void multiply(double *A, double *B, double *C, int n) {
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            C[i * n + j] = 0;
+            for (int k = 0; k < n; k++) {
+                C[i * n + j] += A[i * n + k] * B[k * n + j];
+            }
+        }
     }
 }
 
-// LU descomposición (Doolittle sin pivoteo)
-void lu_decomposition(double* A, double* L, double* U, int n) {
-    for (int i = 0; i < n * n; i++) {
-        L[i] = 0.0;
-        U[i] = 0.0;
-    }
-
+void lu_decomposition(double *A, double *L, double *U, int n) {
     for (int i = 0; i < n; i++) {
-        // L
-        for (int j = i; j < n; j++) {
-            L[j * n + i] = A[j * n + i];
-            for (int k = 0; k < i; k++)
-                L[j * n + i] -= L[j * n + k] * U[k * n + i];
-        }
+        for (int j = 0; j < n; j++) {
+            if (j < i)
+                L[j * n + i] = 0;
+            else {
+                L[j * n + i] = A[j * n + i];
+                for (int k = 0; k < i; k++)
+                    L[j * n + i] -= L[j * n + k] * U[k * n + i];
+            }
 
-        // U
-        for (int j = i; j < n; j++) {
-            if (i == j)
-                U[i * n + j] = 1.0;
+            if (j < i)
+                U[i * n + j] = 0;
+            else if (j == i)
+                U[i * n + j] = 1;
             else {
                 U[i * n + j] = A[i * n + j];
                 for (int k = 0; k < i; k++)
@@ -53,7 +59,7 @@ void lu_decomposition(double* A, double* L, double* U, int n) {
     }
 }
 
-void forward_substitution(double* L, double* B, double* Y, int n) {
+void forward_substitution(double *L, double *B, double *Y, int n) {
     for (int i = 0; i < n; i++) {
         Y[i] = B[i];
         for (int j = 0; j < i; j++)
@@ -62,7 +68,7 @@ void forward_substitution(double* L, double* B, double* Y, int n) {
     }
 }
 
-void backward_substitution(double* U, double* Y, double* X, int n) {
+void backward_substitution(double *U, double *Y, double *X, int n) {
     for (int i = n - 1; i >= 0; i--) {
         X[i] = Y[i];
         for (int j = i + 1; j < n; j++)
@@ -70,70 +76,42 @@ void backward_substitution(double* U, double* Y, double* X, int n) {
     }
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     int rank, size;
-    char hostname[256];
-    gethostname(hostname, sizeof(hostname));
-
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    if (rank == 0)
-        printf("\n=== Inversión de matriz %dx%d distribuida con LU y MPI ===\n", N, N);
-
-    double A[N * N], L[N * N], U[N * N], A_inv[N * N];
-    memset(A_inv, 0, sizeof(A_inv));
-
-    // Cada proceso reporta
-    char info[300];
-    snprintf(info, sizeof(info), "Proceso %d de %d ejecutándose en %s\n", rank, size, hostname);
-    if (rank == 0) {
-        printf("%s", info);
-        for (int i = 1; i < size; i++) {
-            MPI_Recv(info, 300, MPI_CHAR, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            printf("%s", info);
-        }
-    } else {
-        MPI_Send(info, strlen(info) + 1, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
-    }
-
-    double start = MPI_Wtime();
+    double A[N * N], L[N * N], U[N * N], A_inv[N * N], product[N * N];
 
     if (rank == 0) {
         generate_matrix(A, N);
-        print_matrix("Matriz A generada:", A, N);
         lu_decomposition(A, L, U, N);
     }
 
-    // Compartimos L y U con todos
     MPI_Bcast(L, N * N, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(U, N * N, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    // Distribuir columnas de la inversa entre procesos
     int cols_per_proc = N / size;
     int extra = N % size;
     int my_cols = cols_per_proc + (rank < extra ? 1 : 0);
     int start_col = rank * cols_per_proc + (rank < extra ? rank : extra);
 
-    double local_result[N * my_cols];
+    double local_inv[N * my_cols];
 
     for (int c = 0; c < my_cols; c++) {
-        int col_index = start_col + c;
+        int col = start_col + c;
         double B[N], Y[N], X[N];
-        for (int i = 0; i < N; i++) B[i] = (i == col_index) ? 1.0 : 0.0;
+        for (int i = 0; i < N; i++) B[i] = (i == col) ? 1.0 : 0.0;
 
         forward_substitution(L, B, Y, N);
         backward_substitution(U, Y, X, N);
 
-        for (int i = 0; i < N; i++) {
-            local_result[i * my_cols + c] = X[i];
-        }
+        for (int i = 0; i < N; i++)
+            local_inv[i * my_cols + c] = X[i];
     }
 
-    // Preparar recopilación en root
-    int* recvcounts = NULL;
-    int* displs = NULL;
+    int *recvcounts = NULL, *displs = NULL;
     if (rank == 0) {
         recvcounts = malloc(size * sizeof(int));
         displs = malloc(size * sizeof(int));
@@ -146,15 +124,16 @@ int main(int argc, char** argv) {
         }
     }
 
-    MPI_Gatherv(local_result, N * my_cols, MPI_DOUBLE, A_inv, recvcounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-
-    double end = MPI_Wtime();
+    MPI_Gatherv(local_inv, N * my_cols, MPI_DOUBLE, A_inv, recvcounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
-        print_matrix("Matriz inversa A⁻¹:", A_inv, N);
-        printf("Tiempo de ejecución de inversión: %.6f segundos\n", end - start);
-        if (recvcounts) free(recvcounts);
-        if (displs) free(displs);
+        print_matrix("Matriz A:", A, N);
+        print_matrix("Inversa de A:", A_inv, N);
+        multiply(A, A_inv, product, N);
+        print_matrix("A * A_inv (debería ser identidad):", product, N);
+
+        free(recvcounts);
+        free(displs);
     }
 
     MPI_Finalize();
