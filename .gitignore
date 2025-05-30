@@ -1,6 +1,0 @@
-# Archivos de salida de compilación
-*
-!*.c
-!*.h
-!*.md
-!.gitignore
